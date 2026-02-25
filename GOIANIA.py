@@ -354,18 +354,29 @@ def make_dfc_table(
     meses_exib: List[int],
 ) -> pd.DataFrame:
     saidas_total = {m: 0.0 for m in range(1, 13)}
-    inv_by_month = {m: 0.0 for m in range(1, 13)}
-    fin_by_month = {m: 0.0 for m in range(1, 13)}
+
+    # Componentes para o cálculo do "SALDO OPERACIONAL antes..."
+    # Regra solicitada: SALDO OPERACIONAL + DESPESAS FINANCEIRAS + INVESTIMENTOS / RETIRADAS
+    fin_by_month = {m: 0.0 for m in range(1, 13)}   # 00022
+    inv_by_month = {m: 0.0 for m in range(1, 13)}   # 00024
+
     for nome, by_m, prefix in saidas_map_by_month:
         for m in range(1, 13):
-            saidas_total[m] += float(by_m.get(m, 0.0))
-            if prefix == "00022":
-                inv_by_month[m] = float(by_m.get(m, 0.0))
-            if prefix == "00023":
-                fin_by_month[m] = float(by_m.get(m, 0.0))
+            v = float(by_m.get(m, 0.0))
+            saidas_total[m] += v
+
+            # mapeia corretamente os componentes
+            if prefix == "00022":  # DESPESAS FINANCEIRAS
+                fin_by_month[m] = v
+            elif prefix == "00024":  # INVESTIMENTOS / RETIRADAS
+                inv_by_month[m] = v
 
     saldo_by_month = {m: float(receb_by_month.get(m, 0.0)) - float(saidas_total.get(m, 0.0)) for m in range(1, 13)}
-    saldo_antes_fin_ret_by_month = {m: float(saldo_by_month[m]) + float(fin_by_month[m]) + float(inv_by_month[m]) for m in range(1, 13)}
+
+    # "SALDO OPERACIONAL antes..." conforme regra: saldo operacional + fin + investimentos/retiradas
+    saldo_antes_fin_ret_by_month = {
+        m: float(saldo_by_month[m]) + float(fin_by_month[m]) + float(inv_by_month[m]) for m in range(1, 13)
+    }
 
     linhas: List[Tuple[str, Dict[int, float], str]] = []
     linhas.append(("RECEBIMENTOS", receb_by_month, "currency"))
