@@ -928,10 +928,19 @@ else:
     fat_y1 = float(base_y1["_receita"].sum())
     crescimento_pct = ((fat_cur / fat_y1 - 1) * 100.0) if fat_y1 != 0 else (100.0 if fat_cur != 0 else 0.0)
 
-    c1, c2, c3 = st.columns(3)
+    if "CLIENTE" in base_cur.columns:
+        clientes_base = base_cur[base_cur["_receita"] > 0].copy()
+        clientes_base["CLIENTE"] = clientes_base["CLIENTE"].astype(str).str.strip()
+        clientes_base = clientes_base[(clientes_base["CLIENTE"] != "") & (clientes_base["CLIENTE"].str.lower() != "nan")]
+        clientes_atendidos = int(clientes_base["CLIENTE"].nunique())
+    else:
+        clientes_atendidos = 0
+
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Faturamento (período)", f"R$ {format_brl(fat_cur)}")
     c2.metric("Faturamento Ano-1 (mesmo período)", f"R$ {format_brl(fat_y1)}")
     c3.metric("Crescimento", fmt_pct(crescimento_pct))
+    c4.metric("Clientes Atendidos", f"{clientes_atendidos:,}".replace(",", "."))
 
     st.divider()
 
