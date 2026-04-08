@@ -427,6 +427,12 @@ def style_table(df: pd.DataFrame, meses_exib: List[int], highlight_rows: List[st
 
     show = base[cols_all].copy()
 
+    # Converte para object para permitir substituir números por strings formatadas
+    # sem erro de upcast no pandas mais novo.
+    for c in cols_value + cols_pct:
+        if c in show.columns:
+            show[c] = show[c].astype(object)
+
     for i in show.index:
         typ = str(base.loc[i, "_type"])
         for c in cols_value:
