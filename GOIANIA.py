@@ -989,6 +989,88 @@ else:
         st.plotly_chart(fig_bar, use_container_width=True)
 
     st.divider()
+    st.subheader("Faturamento por Vendedor")
+
+    if base_cur.empty or "VENDEDOR" not in base_cur.columns:
+        st.info("Coluna VENDEDOR não encontrada ou sem dados no período.")
+    else:
+        base_vendedor = base_cur.copy()
+        base_vendedor["VENDEDOR"] = (
+            base_vendedor["VENDEDOR"]
+            .fillna("—")
+            .astype(str)
+            .str.strip()
+            .replace({"": "—", "nan": "—", "None": "—"})
+        )
+
+        vend = (
+            base_vendedor.groupby("VENDEDOR", dropna=False)["_receita"]
+            .sum()
+            .reset_index()
+            .rename(columns={"_receita": "Faturamento"})
+        )
+
+        total_vend = float(vend["Faturamento"].sum())
+        vend["%"] = (vend["Faturamento"] / total_vend * 100.0) if total_vend != 0 else 0.0
+        vend = vend.sort_values("Faturamento", ascending=False)
+
+        c_v1, c_v2, c_v3 = st.columns(3)
+        c_v1.metric("Total vendido", f"R$ {format_brl(total_vend)}")
+        c_v2.metric("Qtd. vendedores", f"{int(vend['VENDEDOR'].nunique()):,}".replace(",", "."))
+        c_v3.metric("Maior vendedor", vend.iloc[0]["VENDEDOR"] if not vend.empty else "—")
+
+        fig_vend = px.bar(
+            vend,
+            x="VENDEDOR",
+            y="Faturamento",
+            text="%",
+            hover_data={"Faturamento": ":,.2f", "%": ":.2f"},
+        )
+        fig_vend.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+        fig_vend.update_layout(
+            xaxis_title=None,
+            yaxis_title="Faturamento (R$)",
+            xaxis_tickangle=-45,
+            height=500,
+            margin=dict(t=40, b=120),
+        )
+        st.plotly_chart(fig_vend, use_container_width=True)
+
+        show_vend = vend.copy()
+        show_vend["Faturamento"] = show_vend["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
+        show_vend["%"] = show_vend["%"].apply(fmt_pct)
+        st.dataframe(show_vend, use_container_width=True, hide_index=True)
+
+        st.markdown("#### Drill — Clientes do vendedor")
+        vendedor_sel = st.selectbox(
+            "Selecione o vendedor",
+            options=vend["VENDEDOR"].tolist(),
+            index=0,
+            key="vendedor_sel",
+        )
+
+        base_v = base_vendedor[base_vendedor["VENDEDOR"] == vendedor_sel].copy()
+        if base_v.empty or "CLIENTE" not in base_v.columns:
+            st.info("Sem dados para o vendedor selecionado ou coluna CLIENTE ausente.")
+        else:
+            cli_v = (
+                base_v.groupby("CLIENTE", dropna=False)["_receita"]
+                .sum()
+                .reset_index()
+                .rename(columns={"_receita": "Faturamento"})
+            )
+            cli_v["CLIENTE"] = cli_v["CLIENTE"].fillna("—").astype(str).str.strip().replace({"": "—", "nan": "—"})
+
+            total_cli_v = float(cli_v["Faturamento"].sum())
+            cli_v["%"] = (cli_v["Faturamento"] / total_cli_v * 100.0) if total_cli_v != 0 else 0.0
+            cli_v = cli_v.sort_values("Faturamento", ascending=False)
+
+            show_cli_v = cli_v.copy()
+            show_cli_v["Faturamento"] = show_cli_v["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
+            show_cli_v["%"] = show_cli_v["%"].apply(fmt_pct)
+            st.dataframe(show_cli_v, use_container_width=True, hide_index=True)
+
+    st.divider()
     st.subheader("Participação por Segmento")
     if base_cur.empty or "SEGMENTO" not in base_cur.columns:
         st.info("Coluna SEGMENTO não encontrada ou sem dados no período.")
