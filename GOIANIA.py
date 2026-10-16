@@ -478,9 +478,45 @@ def style_table(df: pd.DataFrame, meses_exib: List[int], highlight_rows: List[st
 # =========================
 st.set_page_config(page_title="Indicadores Goiânia (DRE/DFC)", layout="wide")
 
+# Identidade visual do painel — apenas apresentação, sem alterar regras de negócio.
+st.markdown("""
+<style>
+.block-container {padding-top: 1.5rem; padding-bottom: 2.5rem; max-width: 1600px;}
+[data-testid="stSidebar"] {border-right: 1px solid rgba(128,128,128,.16);}
+[data-testid="stMetric"] {background: linear-gradient(145deg, rgba(255,255,255,.055), rgba(255,255,255,.018)); border: 1px solid rgba(128,128,128,.18); border-radius: 16px; padding: 16px 18px; box-shadow: 0 8px 24px rgba(0,0,0,.06);}
+[data-testid="stMetricLabel"] {font-weight: 650;}
+[data-testid="stMetricValue"] {font-size: 1.65rem;}
+[data-testid="stDataFrame"] {border: 1px solid rgba(128,128,128,.16); border-radius: 14px; overflow: hidden;}
+div[data-testid="stExpander"] {border: 1px solid rgba(128,128,128,.16); border-radius: 14px;}
+.panel-head {padding: 18px 20px; border: 1px solid rgba(128,128,128,.16); border-radius: 18px; margin: 4px 0 18px; background: linear-gradient(135deg, rgba(31,119,180,.12), rgba(31,119,180,.025));}
+.panel-head h2 {margin:0; font-size:1.55rem;}
+.panel-head p {margin:.35rem 0 0; opacity:.72;}
+.section-title {font-size:1.05rem; font-weight:750; margin: 1.15rem 0 .55rem; padding-left:.65rem; border-left:4px solid #1f77b4;}
+.small-muted {opacity:.68; font-size:.88rem;}
+</style>
+""", unsafe_allow_html=True)
+
+def panel_header(title: str, subtitle: str = ""):
+    st.markdown(f'<div class="panel-head"><h2>{title}</h2><p>{subtitle}</p></div>', unsafe_allow_html=True)
+
+def section_title(title: str):
+    st.markdown(f'<div class="section-title">{title}</div>', unsafe_allow_html=True)
+
+def polish_fig(fig, height=420):
+    fig.update_layout(
+        height=height, margin=dict(l=18, r=18, t=36, b=18),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        legend_title_text="", hoverlabel=dict(font_size=13)
+    )
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(gridcolor="rgba(128,128,128,.14)", zeroline=False)
+    return fig
+
+
+
 excel_path = _auto_find_excel()
 if not excel_path:
-    st.error("Não encontrei nenhum Excel (.xlsx/.xlsm/.xls) na pasta do app. Coloque o Excel junto do .py (ex.: 'projeto Paracatu.xlsx').")
+    st.error("Não encontrei nenhum Excel (.xlsx/.xlsm/.xls) na pasta do app. Coloque o Excel junto do .py (ex.: 'PROJETO GOIÂNIA.xlsx').")
     st.stop()
 
 sig = excel_signature(excel_path)
@@ -546,7 +582,7 @@ pagina = st.sidebar.radio("Página", ["DRE", "DFC", "INDICADOR DE COMPRAS", "IND
 # DRE
 # =========================
 if pagina == "DRE":
-    st.title("DRE — Indicadores Goiânia")
+    panel_header("DRE — Demonstrativo de Resultado", "Visão gerencial do resultado, margens e despesas do período selecionado.")
 
     receita_by_month = month_series(df_rcm, "_receita", int(ano_ref), meses_exib)
     cmv_by_month = month_series(df_rcm, "_cmv", int(ano_ref), meses_exib)
@@ -573,7 +609,7 @@ if pagina == "DRE":
 
     highlight_rows = ["RESULTADO OPERACIONAL", "RESULTADO antes das Desp financeiras e RETIRADAS"]
 
-    st.subheader("Tabela DRE")
+    section_title("Quadro DRE")
     st.dataframe(style_table(dre_tbl, meses_exib, highlight_rows), use_container_width=True, hide_index=True)
 
     st.divider()
@@ -700,7 +736,7 @@ if pagina == "DRE":
 # DFC
 # =========================
 elif pagina == "DFC":
-    st.title("DFC — Indicadores Goiânia")
+    panel_header("DFC — Fluxo de Caixa", "Visão gerencial de recebimentos, saídas e saldo operacional do período selecionado.")
 
     receb_by_month = month_series(df_rec, "_v", int(ano_ref), meses_exib)
 
@@ -724,7 +760,7 @@ elif pagina == "DFC":
 
     highlight_rows = ["SALDO OPERACIONAL", "SALDO OPERACIONAL antes das Desp financeiras e RETIRADAS"]
 
-    st.subheader("Tabela DFC")
+    section_title("Quadro DFC")
     st.dataframe(style_table(dfc_tbl, meses_exib, highlight_rows), use_container_width=True, hide_index=True)
 
     st.divider()
@@ -823,7 +859,7 @@ elif pagina == "DFC":
 # INDICADOR DE COMPRAS
 # =========================
 elif pagina == "INDICADOR DE COMPRAS":
-    st.title("INDICADOR DE COMPRAS")
+    panel_header("Indicador de Compras", "Análise de compras, CMV e fornecedores do período selecionado.")
 
     if df_comp is None:
         st.error("A aba 'Compras fornecedor' não foi encontrada ou não pôde ser lida. Verifique o nome da aba no Excel.")
@@ -906,7 +942,7 @@ elif pagina == "INDICADOR DE COMPRAS":
 # INDICADORES COMERCIAIS
 # =========================
 else:
-    st.title("INDICADORES COMERCIAIS")
+    panel_header("Indicadores Comerciais", "Faturamento, crescimento, vendedores, segmentos, marcas, linhas e clientes em uma visão executiva.")
 
     start = pd.Timestamp(date_ini) if date_ini is not None else pd.Timestamp(year=int(ano_ref), month=1, day=1)
     end = pd.Timestamp(date_fim) if date_fim is not None else pd.Timestamp(year=int(ano_ref), month=12, day=31)
@@ -973,7 +1009,7 @@ else:
             show["DIF (%)"] = show["DIF (%)"].apply(fmt_pct)
             st.dataframe(show, use_container_width=True, hide_index=True)
 
-    st.subheader("Faturamento por mês")
+    section_title("Evolução do faturamento")
     if base_cur.empty:
         st.info("Sem dados para o período selecionado.")
     else:
@@ -986,10 +1022,10 @@ else:
             bar = bar[bar["MES"].isin(meses_exib)].copy()
         fig_bar = px.bar(bar, x="MÊS", y="_receita")
         fig_bar.update_layout(yaxis_title="Faturamento (R$)", xaxis_title=None)
-        st.plotly_chart(fig_bar, use_container_width=True)
+        st.plotly_chart(polish_fig(fig_bar, 390), use_container_width=True)
 
     st.divider()
-    st.subheader("Faturamento por Vendedor")
+    section_title("Performance por vendedor")
 
     if base_cur.empty or "VENDEDOR" not in base_cur.columns:
         st.info("Coluna VENDEDOR não encontrada ou sem dados no período.")
@@ -1034,7 +1070,7 @@ else:
             height=500,
             margin=dict(t=40, b=120),
         )
-        st.plotly_chart(fig_vend, use_container_width=True)
+        st.plotly_chart(polish_fig(fig_vend, 470), use_container_width=True)
 
         show_vend = vend.copy()
         show_vend["Faturamento"] = show_vend["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
@@ -1071,7 +1107,7 @@ else:
             st.dataframe(show_cli_v, use_container_width=True, hide_index=True)
 
     st.divider()
-    st.subheader("Participação por Segmento")
+    section_title("Participação por segmento")
     if base_cur.empty or "SEGMENTO" not in base_cur.columns:
         st.info("Coluna SEGMENTO não encontrada ou sem dados no período.")
     else:
@@ -1083,7 +1119,7 @@ else:
         seg = seg.sort_values("Faturamento", ascending=False)
 
         fig_pie = px.pie(seg, names="SEGMENTO", values="Faturamento")
-        st.plotly_chart(fig_pie, use_container_width=True)
+        st.plotly_chart(polish_fig(fig_pie, 430), use_container_width=True)
 
         show = seg.copy()
         show["Faturamento"] = show["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
@@ -1109,7 +1145,7 @@ else:
             st.dataframe(show_s, use_container_width=True, hide_index=True)
 
     st.divider()
-    st.subheader("Marcas — Top 10")
+    section_title("Marcas — Top 10")
     if base_cur.empty or "MARCA" not in base_cur.columns:
         st.info("Coluna MARCA não encontrada ou sem dados.")
     else:
@@ -1151,7 +1187,7 @@ else:
             st.dataframe(showl, use_container_width=True, hide_index=True)
 
     st.divider()
-    st.subheader("Linhas — Top 10")
+    section_title("Linhas — Top 10")
     if base_cur.empty or "LINHA" not in base_cur.columns:
         st.info("Coluna LINHA não encontrada ou sem dados.")
     else:
@@ -1193,7 +1229,7 @@ else:
             st.dataframe(showb, use_container_width=True, hide_index=True)
 
     st.divider()
-    st.subheader("Clientes")
+    section_title("Clientes")
     if base_cur.empty or "CLIENTE" not in base_cur.columns:
         st.info("Coluna CLIENTE não encontrada ou sem dados.")
     else:
@@ -1258,7 +1294,7 @@ else:
 
 
     st.divider()
-    st.subheader("Evolução de clientes (por mês)")
+    section_title("Evolução de clientes (por mês)")
 
     if base_cur.empty or "CLIENTE" not in base_cur.columns:
         st.info("Sem dados no período selecionado ou coluna CLIENTE não encontrada.")
