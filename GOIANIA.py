@@ -978,355 +978,409 @@ else:
     c3.metric("Crescimento", fmt_pct(crescimento_pct))
     c4.metric("Clientes Atendidos", f"{clientes_atendidos:,}".replace(",", "."))
 
-    st.divider()
+    st.markdown("### Navegação comercial")
+    menu_comercial = st.radio(
+        "Escolha o indicador",
+        ["Faturamento", "Vendedores", "Segmentos", "Marcas", "Linhas", "Clientes", "Evolução de clientes", "Markup"],
+        horizontal=True, key="menu_indicadores_comerciais", label_visibility="collapsed",
+    )
 
-    with st.expander("Comparativo Ano-1 por mês (abrir/fechar)", expanded=False):
-        meses_periodo = list(meses_exib)
-        cur_m = base_cur.groupby(base_cur["_dt"].dt.month)["_receita"].sum()
-        y1_m = base_y1.groupby(base_y1["_dt"].dt.month)["_receita"].sum()
+    if menu_comercial == "Faturamento":
+        st.divider()
 
-        rows = []
-        for m in meses_periodo:
-            v_cur = float(cur_m.get(m, 0.0))
-            v_y1 = float(y1_m.get(m, 0.0))
-            dif_r = v_cur - v_y1
-            dif_p = ((v_cur / v_y1 - 1) * 100.0) if v_y1 != 0 else (100.0 if v_cur != 0 else 0.0)
-            rows.append({
-                "MÊS": MESES_FULL.get(int(m), str(m)),
-                f"{int(ano_ref)-1}": v_y1,
-                f"{int(ano_ref)}": v_cur,
-                "DIF (R$)": dif_r,
-                "DIF (%)": dif_p,
-            })
+        with st.expander("Comparativo Ano-1 por mês (abrir/fechar)", expanded=False):
+            meses_periodo = list(meses_exib)
+            cur_m = base_cur.groupby(base_cur["_dt"].dt.month)["_receita"].sum()
+            y1_m = base_y1.groupby(base_y1["_dt"].dt.month)["_receita"].sum()
 
-        t = pd.DataFrame(rows)
-        if t.empty:
-            st.info("Sem dados no período selecionado.")
+            rows = []
+            for m in meses_periodo:
+                v_cur = float(cur_m.get(m, 0.0))
+                v_y1 = float(y1_m.get(m, 0.0))
+                dif_r = v_cur - v_y1
+                dif_p = ((v_cur / v_y1 - 1) * 100.0) if v_y1 != 0 else (100.0 if v_cur != 0 else 0.0)
+                rows.append({
+                    "MÊS": MESES_FULL.get(int(m), str(m)),
+                    f"{int(ano_ref)-1}": v_y1,
+                    f"{int(ano_ref)}": v_cur,
+                    "DIF (R$)": dif_r,
+                    "DIF (%)": dif_p,
+                })
+
+            t = pd.DataFrame(rows)
+            if t.empty:
+                st.info("Sem dados no período selecionado.")
+            else:
+                show = t.copy()
+                for col in [str(int(ano_ref)-1), str(int(ano_ref)), "DIF (R$)"]:
+                    show[col] = show[col].apply(lambda x: f"R$ {format_brl(x)}")
+                show["DIF (%)"] = show["DIF (%)"].apply(fmt_pct)
+                st.dataframe(show, use_container_width=True, hide_index=True)
+
+    if menu_comercial == "Faturamento":
+        section_title("Evolução do faturamento")
+        if base_cur.empty:
+            st.info("Sem dados para o período selecionado.")
         else:
-            show = t.copy()
-            for col in [str(int(ano_ref)-1), str(int(ano_ref)), "DIF (R$)"]:
-                show[col] = show[col].apply(lambda x: f"R$ {format_brl(x)}")
-            show["DIF (%)"] = show["DIF (%)"].apply(fmt_pct)
-            st.dataframe(show, use_container_width=True, hide_index=True)
+            bar = (base_cur.assign(MES=base_cur["_dt"].dt.month)
+                   .groupby("MES")["_receita"].sum()
+                   .reindex(range(1, 13), fill_value=0.0)
+                   .reset_index())
+            bar["MÊS"] = bar["MES"].map(MESES_FULL)
+            if meses_exib:
+                bar = bar[bar["MES"].isin(meses_exib)].copy()
+            fig_bar = px.bar(bar, x="MÊS", y="_receita")
+            fig_bar.update_layout(yaxis_title="Faturamento (R$)", xaxis_title=None)
+            st.plotly_chart(polish_fig(fig_bar, 390), use_container_width=True)
 
-    section_title("Evolução do faturamento")
-    if base_cur.empty:
-        st.info("Sem dados para o período selecionado.")
-    else:
-        bar = (base_cur.assign(MES=base_cur["_dt"].dt.month)
-               .groupby("MES")["_receita"].sum()
-               .reindex(range(1, 13), fill_value=0.0)
-               .reset_index())
-        bar["MÊS"] = bar["MES"].map(MESES_FULL)
-        if meses_exib:
-            bar = bar[bar["MES"].isin(meses_exib)].copy()
-        fig_bar = px.bar(bar, x="MÊS", y="_receita")
-        fig_bar.update_layout(yaxis_title="Faturamento (R$)", xaxis_title=None)
-        st.plotly_chart(polish_fig(fig_bar, 390), use_container_width=True)
+    if menu_comercial == "Vendedores":
+        st.divider()
+        section_title("Performance por vendedor")
 
-    st.divider()
-    section_title("Performance por vendedor")
-
-    if base_cur.empty or "VENDEDOR" not in base_cur.columns:
-        st.info("Coluna VENDEDOR não encontrada ou sem dados no período.")
-    else:
-        base_vendedor = base_cur.copy()
-        base_vendedor["VENDEDOR"] = (
-            base_vendedor["VENDEDOR"]
-            .fillna("—")
-            .astype(str)
-            .str.strip()
-            .replace({"": "—", "nan": "—", "None": "—"})
-        )
-
-        vend = (
-            base_vendedor.groupby("VENDEDOR", dropna=False)["_receita"]
-            .sum()
-            .reset_index()
-            .rename(columns={"_receita": "Faturamento"})
-        )
-
-        total_vend = float(vend["Faturamento"].sum())
-        vend["%"] = (vend["Faturamento"] / total_vend * 100.0) if total_vend != 0 else 0.0
-        vend = vend.sort_values("Faturamento", ascending=False)
-
-        c_v1, c_v2, c_v3 = st.columns(3)
-        c_v1.metric("Total vendido", f"R$ {format_brl(total_vend)}")
-        c_v2.metric("Qtd. vendedores", f"{int(vend['VENDEDOR'].nunique()):,}".replace(",", "."))
-        c_v3.metric("Maior vendedor", vend.iloc[0]["VENDEDOR"] if not vend.empty else "—")
-
-        fig_vend = px.bar(
-            vend,
-            x="VENDEDOR",
-            y="Faturamento",
-            text="%",
-            hover_data={"Faturamento": ":,.2f", "%": ":.2f"},
-        )
-        fig_vend.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
-        fig_vend.update_layout(
-            xaxis_title=None,
-            yaxis_title="Faturamento (R$)",
-            xaxis_tickangle=-45,
-            height=500,
-            margin=dict(t=40, b=120),
-        )
-        st.plotly_chart(polish_fig(fig_vend, 470), use_container_width=True)
-
-        show_vend = vend.copy()
-        show_vend["Faturamento"] = show_vend["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
-        show_vend["%"] = show_vend["%"].apply(fmt_pct)
-        st.dataframe(show_vend, use_container_width=True, hide_index=True)
-
-        st.markdown("#### Drill — Clientes do vendedor")
-        vendedor_sel = st.selectbox(
-            "Selecione o vendedor",
-            options=vend["VENDEDOR"].tolist(),
-            index=0,
-            key="vendedor_sel",
-        )
-
-        base_v = base_vendedor[base_vendedor["VENDEDOR"] == vendedor_sel].copy()
-        if base_v.empty or "CLIENTE" not in base_v.columns:
-            st.info("Sem dados para o vendedor selecionado ou coluna CLIENTE ausente.")
+        if base_cur.empty or "VENDEDOR" not in base_cur.columns:
+            st.info("Coluna VENDEDOR não encontrada ou sem dados no período.")
         else:
-            cli_v = (
-                base_v.groupby("CLIENTE", dropna=False)["_receita"]
+            base_vendedor = base_cur.copy()
+            base_vendedor["VENDEDOR"] = (
+                base_vendedor["VENDEDOR"]
+                .fillna("—")
+                .astype(str)
+                .str.strip()
+                .replace({"": "—", "nan": "—", "None": "—"})
+            )
+
+            vend = (
+                base_vendedor.groupby("VENDEDOR", dropna=False)["_receita"]
                 .sum()
                 .reset_index()
                 .rename(columns={"_receita": "Faturamento"})
             )
-            cli_v["CLIENTE"] = cli_v["CLIENTE"].fillna("—").astype(str).str.strip().replace({"": "—", "nan": "—"})
 
-            total_cli_v = float(cli_v["Faturamento"].sum())
-            cli_v["%"] = (cli_v["Faturamento"] / total_cli_v * 100.0) if total_cli_v != 0 else 0.0
-            cli_v = cli_v.sort_values("Faturamento", ascending=False)
+            total_vend = float(vend["Faturamento"].sum())
+            vend["%"] = (vend["Faturamento"] / total_vend * 100.0) if total_vend != 0 else 0.0
+            vend = vend.sort_values("Faturamento", ascending=False)
 
-            show_cli_v = cli_v.copy()
-            show_cli_v["Faturamento"] = show_cli_v["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
-            show_cli_v["%"] = show_cli_v["%"].apply(fmt_pct)
-            st.dataframe(show_cli_v, use_container_width=True, hide_index=True)
+            c_v1, c_v2, c_v3 = st.columns(3)
+            c_v1.metric("Total vendido", f"R$ {format_brl(total_vend)}")
+            c_v2.metric("Qtd. vendedores", f"{int(vend['VENDEDOR'].nunique()):,}".replace(",", "."))
+            c_v3.metric("Maior vendedor", vend.iloc[0]["VENDEDOR"] if not vend.empty else "—")
 
-    st.divider()
-    section_title("Participação por segmento")
-    if base_cur.empty or "SEGMENTO" not in base_cur.columns:
-        st.info("Coluna SEGMENTO não encontrada ou sem dados no período.")
-    else:
-        seg = (base_cur.groupby("SEGMENTO", dropna=False)["_receita"].sum()
-               .reset_index().rename(columns={"_receita": "Faturamento"}))
-        seg["SEGMENTO"] = seg["SEGMENTO"].fillna("—").astype(str).str.strip().replace({"": "—"})
-        total_seg = float(seg["Faturamento"].sum())
-        seg["%"] = (seg["Faturamento"] / total_seg * 100.0) if total_seg != 0 else 0.0
-        seg = seg.sort_values("Faturamento", ascending=False)
+            fig_vend = px.bar(
+                vend,
+                x="VENDEDOR",
+                y="Faturamento",
+                text="%",
+                hover_data={"Faturamento": ":,.2f", "%": ":.2f"},
+            )
+            fig_vend.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+            fig_vend.update_layout(
+                xaxis_title=None,
+                yaxis_title="Faturamento (R$)",
+                xaxis_tickangle=-45,
+                height=500,
+                margin=dict(t=40, b=120),
+            )
+            st.plotly_chart(polish_fig(fig_vend, 470), use_container_width=True)
 
-        fig_pie = px.pie(seg, names="SEGMENTO", values="Faturamento")
-        st.plotly_chart(polish_fig(fig_pie, 430), use_container_width=True)
+            show_vend = vend.copy()
+            show_vend["Faturamento"] = show_vend["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
+            show_vend["%"] = show_vend["%"].apply(fmt_pct)
+            st.dataframe(show_vend, use_container_width=True, hide_index=True)
 
-        show = seg.copy()
-        show["Faturamento"] = show["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
-        show["%"] = show["%"].apply(fmt_pct)
-        st.dataframe(show, use_container_width=True, hide_index=True)
+            st.markdown("#### Drill — Clientes do vendedor")
+            vendedor_sel = st.selectbox(
+                "Selecione o vendedor",
+                options=vend["VENDEDOR"].tolist(),
+                index=0,
+                key="vendedor_sel",
+            )
 
-        st.markdown("#### Drill — Linhas dentro do Segmento")
-        seg_sel = st.selectbox("Selecione o segmento", options=seg["SEGMENTO"].tolist(), index=0, key="seg_sel")
-        base_s = base_cur[base_cur["SEGMENTO"].fillna("—").astype(str).str.strip().replace({"": "—"}) == seg_sel].copy()
-        if base_s.empty or "LINHA" not in base_s.columns:
-            st.info("Sem dados para o segmento selecionado ou coluna LINHA ausente.")
+            base_v = base_vendedor[base_vendedor["VENDEDOR"] == vendedor_sel].copy()
+            if base_v.empty or "CLIENTE" not in base_v.columns:
+                st.info("Sem dados para o vendedor selecionado ou coluna CLIENTE ausente.")
+            else:
+                cli_v = (
+                    base_v.groupby("CLIENTE", dropna=False)["_receita"]
+                    .sum()
+                    .reset_index()
+                    .rename(columns={"_receita": "Faturamento"})
+                )
+                cli_v["CLIENTE"] = cli_v["CLIENTE"].fillna("—").astype(str).str.strip().replace({"": "—", "nan": "—"})
+
+                total_cli_v = float(cli_v["Faturamento"].sum())
+                cli_v["%"] = (cli_v["Faturamento"] / total_cli_v * 100.0) if total_cli_v != 0 else 0.0
+                cli_v = cli_v.sort_values("Faturamento", ascending=False)
+
+                show_cli_v = cli_v.copy()
+                show_cli_v["Faturamento"] = show_cli_v["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
+                show_cli_v["%"] = show_cli_v["%"].apply(fmt_pct)
+                st.dataframe(show_cli_v, use_container_width=True, hide_index=True)
+
+    if menu_comercial == "Segmentos":
+        st.divider()
+        section_title("Participação por segmento")
+        if base_cur.empty or "SEGMENTO" not in base_cur.columns:
+            st.info("Coluna SEGMENTO não encontrada ou sem dados no período.")
         else:
-            sdf = (base_s.groupby("LINHA", dropna=False)["_receita"].sum()
+            seg = (base_cur.groupby("SEGMENTO", dropna=False)["_receita"].sum()
                    .reset_index().rename(columns={"_receita": "Faturamento"}))
-            sdf["LINHA"] = sdf["LINHA"].fillna("—").astype(str).str.strip().replace({"": "—"})
-            tots = float(sdf["Faturamento"].sum())
-            sdf["% (sobre o segmento)"] = (sdf["Faturamento"] / tots * 100.0) if tots != 0 else 0.0
-            sdf = sdf.sort_values("Faturamento", ascending=False)
+            seg["SEGMENTO"] = seg["SEGMENTO"].fillna("—").astype(str).str.strip().replace({"": "—"})
+            total_seg = float(seg["Faturamento"].sum())
+            seg["%"] = (seg["Faturamento"] / total_seg * 100.0) if total_seg != 0 else 0.0
+            seg = seg.sort_values("Faturamento", ascending=False)
 
-            show_s = sdf.copy()
-            show_s["Faturamento"] = show_s["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
-            show_s["% (sobre o segmento)"] = show_s["% (sobre o segmento)"].apply(fmt_pct)
-            st.dataframe(show_s, use_container_width=True, hide_index=True)
+            fig_pie = px.pie(seg, names="SEGMENTO", values="Faturamento")
+            st.plotly_chart(polish_fig(fig_pie, 430), use_container_width=True)
 
-    st.divider()
-    section_title("Marcas — Top 10")
-    if base_cur.empty or "MARCA" not in base_cur.columns:
-        st.info("Coluna MARCA não encontrada ou sem dados.")
-    else:
-        mdf = (base_cur.groupby("MARCA", dropna=False)["_receita"].sum()
-               .reset_index().rename(columns={"_receita": "Faturamento"}))
-        mdf["MARCA"] = mdf["MARCA"].fillna("—").astype(str).str.strip().replace({"": "—"})
-        tot = float(mdf["Faturamento"].sum())
-        mdf["%"] = (mdf["Faturamento"] / tot * 100.0) if tot != 0 else 0.0
-        mdf = mdf.sort_values("Faturamento", ascending=False)
+            show = seg.copy()
+            show["Faturamento"] = show["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
+            show["%"] = show["%"].apply(fmt_pct)
+            st.dataframe(show, use_container_width=True, hide_index=True)
 
-        top10 = mdf.head(10).copy()
-        show10 = top10.copy()
-        show10["Faturamento"] = show10["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
-        show10["%"] = show10["%"].apply(fmt_pct)
-        st.dataframe(show10, use_container_width=True, hide_index=True)
+            st.markdown("#### Drill — Linhas dentro do Segmento")
+            seg_sel = st.selectbox("Selecione o segmento", options=seg["SEGMENTO"].tolist(), index=0, key="seg_sel")
+            base_s = base_cur[base_cur["SEGMENTO"].fillna("—").astype(str).str.strip().replace({"": "—"}) == seg_sel].copy()
+            if base_s.empty or "LINHA" not in base_s.columns:
+                st.info("Sem dados para o segmento selecionado ou coluna LINHA ausente.")
+            else:
+                sdf = (base_s.groupby("LINHA", dropna=False)["_receita"].sum()
+                       .reset_index().rename(columns={"_receita": "Faturamento"}))
+                sdf["LINHA"] = sdf["LINHA"].fillna("—").astype(str).str.strip().replace({"": "—"})
+                tots = float(sdf["Faturamento"].sum())
+                sdf["% (sobre o segmento)"] = (sdf["Faturamento"] / tots * 100.0) if tots != 0 else 0.0
+                sdf = sdf.sort_values("Faturamento", ascending=False)
 
-        with st.expander("Ver todas as marcas", expanded=False):
-            show_all = mdf.copy()
-            show_all["Faturamento"] = show_all["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
-            show_all["%"] = show_all["%"].apply(fmt_pct)
-            st.dataframe(show_all, use_container_width=True, hide_index=True)
+                show_s = sdf.copy()
+                show_s["Faturamento"] = show_s["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
+                show_s["% (sobre o segmento)"] = show_s["% (sobre o segmento)"].apply(fmt_pct)
+                st.dataframe(show_s, use_container_width=True, hide_index=True)
 
-        st.markdown("#### Drill — Linhas dentro da Marca")
-        marca_sel = st.selectbox("Selecione a marca", options=mdf["MARCA"].tolist(), index=0, key="marca_sel")
-        base_m = base_cur[base_cur["MARCA"].fillna("—").astype(str).str.strip().replace({"": "—"}) == marca_sel].copy()
-        if base_m.empty or "LINHA" not in base_m.columns:
-            st.info("Sem dados para a marca selecionada ou coluna LINHA ausente.")
+    if menu_comercial == "Marcas":
+        st.divider()
+        section_title("Marcas — Top 10")
+        if base_cur.empty or "MARCA" not in base_cur.columns:
+            st.info("Coluna MARCA não encontrada ou sem dados.")
         else:
-            ldf = (base_m.groupby("LINHA", dropna=False)["_receita"].sum()
+            mdf = (base_cur.groupby("MARCA", dropna=False)["_receita"].sum()
                    .reset_index().rename(columns={"_receita": "Faturamento"}))
-            ldf["LINHA"] = ldf["LINHA"].fillna("—").astype(str).str.strip().replace({"": "—"})
-            totm = float(ldf["Faturamento"].sum())
-            ldf["% (sobre a marca)"] = (ldf["Faturamento"] / totm * 100.0) if totm != 0 else 0.0
-            ldf = ldf.sort_values("Faturamento", ascending=False)
+            mdf["MARCA"] = mdf["MARCA"].fillna("—").astype(str).str.strip().replace({"": "—"})
+            tot = float(mdf["Faturamento"].sum())
+            mdf["%"] = (mdf["Faturamento"] / tot * 100.0) if tot != 0 else 0.0
+            mdf = mdf.sort_values("Faturamento", ascending=False)
 
-            showl = ldf.copy()
-            showl["Faturamento"] = showl["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
-            showl["% (sobre a marca)"] = showl["% (sobre a marca)"].apply(fmt_pct)
-            st.dataframe(showl, use_container_width=True, hide_index=True)
+            top10 = mdf.head(10).copy()
+            show10 = top10.copy()
+            show10["Faturamento"] = show10["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
+            show10["%"] = show10["%"].apply(fmt_pct)
+            st.dataframe(show10, use_container_width=True, hide_index=True)
 
-    st.divider()
-    section_title("Linhas — Top 10")
-    if base_cur.empty or "LINHA" not in base_cur.columns:
-        st.info("Coluna LINHA não encontrada ou sem dados.")
-    else:
-        lall = (base_cur.groupby("LINHA", dropna=False)["_receita"].sum()
-                .reset_index().rename(columns={"_receita": "Faturamento"}))
-        lall["LINHA"] = lall["LINHA"].fillna("—").astype(str).str.strip().replace({"": "—"})
-        totl = float(lall["Faturamento"].sum())
-        lall["%"] = (lall["Faturamento"] / totl * 100.0) if totl != 0 else 0.0
-        lall = lall.sort_values("Faturamento", ascending=False)
+            with st.expander("Ver todas as marcas", expanded=False):
+                show_all = mdf.copy()
+                show_all["Faturamento"] = show_all["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
+                show_all["%"] = show_all["%"].apply(fmt_pct)
+                st.dataframe(show_all, use_container_width=True, hide_index=True)
 
-        top10l = lall.head(10).copy()
-        show10l = top10l.copy()
-        show10l["Faturamento"] = show10l["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
-        show10l["%"] = show10l["%"].apply(fmt_pct)
-        st.dataframe(show10l, use_container_width=True, hide_index=True)
+            st.markdown("#### Drill — Linhas dentro da Marca")
+            marca_sel = st.selectbox("Selecione a marca", options=mdf["MARCA"].tolist(), index=0, key="marca_sel")
+            base_m = base_cur[base_cur["MARCA"].fillna("—").astype(str).str.strip().replace({"": "—"}) == marca_sel].copy()
+            if base_m.empty or "LINHA" not in base_m.columns:
+                st.info("Sem dados para a marca selecionada ou coluna LINHA ausente.")
+            else:
+                ldf = (base_m.groupby("LINHA", dropna=False)["_receita"].sum()
+                       .reset_index().rename(columns={"_receita": "Faturamento"}))
+                ldf["LINHA"] = ldf["LINHA"].fillna("—").astype(str).str.strip().replace({"": "—"})
+                totm = float(ldf["Faturamento"].sum())
+                ldf["% (sobre a marca)"] = (ldf["Faturamento"] / totm * 100.0) if totm != 0 else 0.0
+                ldf = ldf.sort_values("Faturamento", ascending=False)
 
-        with st.expander("Ver todas as linhas", expanded=False):
-            show_all_l = lall.copy()
-            show_all_l["Faturamento"] = show_all_l["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
-            show_all_l["%"] = show_all_l["%"].apply(fmt_pct)
-            st.dataframe(show_all_l, use_container_width=True, hide_index=True)
+                showl = ldf.copy()
+                showl["Faturamento"] = showl["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
+                showl["% (sobre a marca)"] = showl["% (sobre a marca)"].apply(fmt_pct)
+                st.dataframe(showl, use_container_width=True, hide_index=True)
 
-        st.markdown("#### Drill — Marcas dentro da Linha")
-        linha_sel = st.selectbox("Selecione a linha", options=lall["LINHA"].tolist(), index=0, key="linha_sel")
-        base_l = base_cur[base_cur["LINHA"].fillna("—").astype(str).str.strip().replace({"": "—"}) == linha_sel].copy()
-        if base_l.empty or "MARCA" not in base_l.columns:
-            st.info("Sem dados para a linha selecionada ou coluna MARCA ausente.")
+    if menu_comercial == "Linhas":
+        st.divider()
+        section_title("Linhas — Top 10")
+        if base_cur.empty or "LINHA" not in base_cur.columns:
+            st.info("Coluna LINHA não encontrada ou sem dados.")
         else:
-            bdf = (base_l.groupby("MARCA", dropna=False)["_receita"].sum()
+            lall = (base_cur.groupby("LINHA", dropna=False)["_receita"].sum()
+                    .reset_index().rename(columns={"_receita": "Faturamento"}))
+            lall["LINHA"] = lall["LINHA"].fillna("—").astype(str).str.strip().replace({"": "—"})
+            totl = float(lall["Faturamento"].sum())
+            lall["%"] = (lall["Faturamento"] / totl * 100.0) if totl != 0 else 0.0
+            lall = lall.sort_values("Faturamento", ascending=False)
+
+            top10l = lall.head(10).copy()
+            show10l = top10l.copy()
+            show10l["Faturamento"] = show10l["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
+            show10l["%"] = show10l["%"].apply(fmt_pct)
+            st.dataframe(show10l, use_container_width=True, hide_index=True)
+
+            with st.expander("Ver todas as linhas", expanded=False):
+                show_all_l = lall.copy()
+                show_all_l["Faturamento"] = show_all_l["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
+                show_all_l["%"] = show_all_l["%"].apply(fmt_pct)
+                st.dataframe(show_all_l, use_container_width=True, hide_index=True)
+
+            st.markdown("#### Drill — Marcas dentro da Linha")
+            linha_sel = st.selectbox("Selecione a linha", options=lall["LINHA"].tolist(), index=0, key="linha_sel")
+            base_l = base_cur[base_cur["LINHA"].fillna("—").astype(str).str.strip().replace({"": "—"}) == linha_sel].copy()
+            if base_l.empty or "MARCA" not in base_l.columns:
+                st.info("Sem dados para a linha selecionada ou coluna MARCA ausente.")
+            else:
+                bdf = (base_l.groupby("MARCA", dropna=False)["_receita"].sum()
+                       .reset_index().rename(columns={"_receita": "Faturamento"}))
+                bdf["MARCA"] = bdf["MARCA"].fillna("—").astype(str).str.strip().replace({"": "—"})
+                totline = float(bdf["Faturamento"].sum())
+                bdf["% (sobre a linha)"] = (bdf["Faturamento"] / totline * 100.0) if totline != 0 else 0.0
+                bdf = bdf.sort_values("Faturamento", ascending=False)
+
+                showb = bdf.copy()
+                showb["Faturamento"] = showb["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
+                showb["% (sobre a linha)"] = showb["% (sobre a linha)"].apply(fmt_pct)
+                st.dataframe(showb, use_container_width=True, hide_index=True)
+
+    if menu_comercial == "Clientes":
+        st.divider()
+        section_title("Clientes")
+        if base_cur.empty or "CLIENTE" not in base_cur.columns:
+            st.info("Coluna CLIENTE não encontrada ou sem dados.")
+        else:
+            cdf = (base_cur.groupby("CLIENTE", dropna=False)["_receita"].sum()
                    .reset_index().rename(columns={"_receita": "Faturamento"}))
-            bdf["MARCA"] = bdf["MARCA"].fillna("—").astype(str).str.strip().replace({"": "—"})
-            totline = float(bdf["Faturamento"].sum())
-            bdf["% (sobre a linha)"] = (bdf["Faturamento"] / totline * 100.0) if totline != 0 else 0.0
-            bdf = bdf.sort_values("Faturamento", ascending=False)
+            cdf["CLIENTE"] = cdf["CLIENTE"].fillna("—").astype(str).str.strip().replace({"": "—"})
+            totc = float(cdf["Faturamento"].sum())
+            cdf["%"] = (cdf["Faturamento"] / totc * 100.0) if totc != 0 else 0.0
+            cdf = cdf.sort_values("Faturamento", ascending=False)
 
-            showb = bdf.copy()
-            showb["Faturamento"] = showb["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
-            showb["% (sobre a linha)"] = showb["% (sobre a linha)"].apply(fmt_pct)
-            st.dataframe(showb, use_container_width=True, hide_index=True)
+            topc = cdf.head(20).copy()
+            showc = topc.copy()
+            showc["Faturamento"] = showc["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
+            showc["%"] = showc["%"].apply(fmt_pct)
+            st.dataframe(showc, use_container_width=True, hide_index=True)
 
-    st.divider()
-    section_title("Clientes")
-    if base_cur.empty or "CLIENTE" not in base_cur.columns:
-        st.info("Coluna CLIENTE não encontrada ou sem dados.")
-    else:
-        cdf = (base_cur.groupby("CLIENTE", dropna=False)["_receita"].sum()
-               .reset_index().rename(columns={"_receita": "Faturamento"}))
-        cdf["CLIENTE"] = cdf["CLIENTE"].fillna("—").astype(str).str.strip().replace({"": "—"})
-        totc = float(cdf["Faturamento"].sum())
-        cdf["%"] = (cdf["Faturamento"] / totc * 100.0) if totc != 0 else 0.0
-        cdf = cdf.sort_values("Faturamento", ascending=False)
+            with st.expander("Ver todos os clientes", expanded=False):
+                show_all_c = cdf.copy()
+                show_all_c["Faturamento"] = show_all_c["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
+                show_all_c["%"] = show_all_c["%"].apply(fmt_pct)
+                st.dataframe(show_all_c, use_container_width=True, hide_index=True)
 
-        topc = cdf.head(20).copy()
-        showc = topc.copy()
-        showc["Faturamento"] = showc["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
-        showc["%"] = showc["%"].apply(fmt_pct)
-        st.dataframe(showc, use_container_width=True, hide_index=True)
+            st.markdown("#### Drill — Linhas e Marcas do Cliente")
+            cliente_sel = st.selectbox("Selecione o cliente", options=cdf["CLIENTE"].tolist(), index=0, key="cliente_sel")
+            base_c = base_cur[base_cur["CLIENTE"].fillna("—").astype(str).str.strip().replace({"": "—"}) == cliente_sel].copy()
+            if base_c.empty:
+                st.info("Sem dados para o cliente selecionado.")
+            else:
+                col1, col2 = st.columns(2)
 
-        with st.expander("Ver todos os clientes", expanded=False):
-            show_all_c = cdf.copy()
-            show_all_c["Faturamento"] = show_all_c["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
-            show_all_c["%"] = show_all_c["%"].apply(fmt_pct)
-            st.dataframe(show_all_c, use_container_width=True, hide_index=True)
+                with col1:
+                    st.markdown("**Linhas compradas**")
+                    if "LINHA" in base_c.columns:
+                        lc = (base_c.groupby("LINHA", dropna=False)["_receita"].sum()
+                              .reset_index().rename(columns={"_receita": "Faturamento"}))
+                        lc["LINHA"] = lc["LINHA"].fillna("—").astype(str).str.strip().replace({"": "—"})
+                        totlc = float(lc["Faturamento"].sum())
+                        lc["%"] = (lc["Faturamento"] / totlc * 100.0) if totlc != 0 else 0.0
+                        lc = lc.sort_values("Faturamento", ascending=False)
+                        show_lc = lc.copy()
+                        show_lc["Faturamento"] = show_lc["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
+                        show_lc["%"] = show_lc["%"].apply(fmt_pct)
+                        st.dataframe(show_lc, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Coluna LINHA não encontrada.")
 
-        st.markdown("#### Drill — Linhas e Marcas do Cliente")
-        cliente_sel = st.selectbox("Selecione o cliente", options=cdf["CLIENTE"].tolist(), index=0, key="cliente_sel")
-        base_c = base_cur[base_cur["CLIENTE"].fillna("—").astype(str).str.strip().replace({"": "—"}) == cliente_sel].copy()
-        if base_c.empty:
-            st.info("Sem dados para o cliente selecionado.")
+                with col2:
+                    st.markdown("**Marcas compradas**")
+                    if "MARCA" in base_c.columns:
+                        mc = (base_c.groupby("MARCA", dropna=False)["_receita"].sum()
+                              .reset_index().rename(columns={"_receita": "Faturamento"}))
+                        mc["MARCA"] = mc["MARCA"].fillna("—").astype(str).str.strip().replace({"": "—"})
+                        totmc = float(mc["Faturamento"].sum())
+                        mc["%"] = (mc["Faturamento"] / totmc * 100.0) if totmc != 0 else 0.0
+                        mc = mc.sort_values("Faturamento", ascending=False)
+                        show_mc = mc.copy()
+                        show_mc["Faturamento"] = show_mc["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
+                        show_mc["%"] = show_mc["%"].apply(fmt_pct)
+                        st.dataframe(show_mc, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Coluna MARCA não encontrada.")
+
+    if menu_comercial == "Evolução de clientes":
+        st.divider()
+        section_title("Evolução de clientes (por mês)")
+
+        if base_cur.empty or "CLIENTE" not in base_cur.columns:
+            st.info("Sem dados no período selecionado ou coluna CLIENTE não encontrada.")
         else:
-            col1, col2 = st.columns(2)
+            meses_cols = list(meses_exib) if meses_exib else list(range(1, 13))
+            meses_names = [MESES_FULL[m] for m in meses_cols]
 
-            with col1:
-                st.markdown("**Linhas compradas**")
-                if "LINHA" in base_c.columns:
-                    lc = (base_c.groupby("LINHA", dropna=False)["_receita"].sum()
-                          .reset_index().rename(columns={"_receita": "Faturamento"}))
-                    lc["LINHA"] = lc["LINHA"].fillna("—").astype(str).str.strip().replace({"": "—"})
-                    totlc = float(lc["Faturamento"].sum())
-                    lc["%"] = (lc["Faturamento"] / totlc * 100.0) if totlc != 0 else 0.0
-                    lc = lc.sort_values("Faturamento", ascending=False)
-                    show_lc = lc.copy()
-                    show_lc["Faturamento"] = show_lc["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
-                    show_lc["%"] = show_lc["%"].apply(fmt_pct)
-                    st.dataframe(show_lc, use_container_width=True, hide_index=True)
-                else:
-                    st.info("Coluna LINHA não encontrada.")
+            tmp = base_cur.copy()
+            tmp["MES"] = tmp["_dt"].dt.month
 
-            with col2:
-                st.markdown("**Marcas compradas**")
-                if "MARCA" in base_c.columns:
-                    mc = (base_c.groupby("MARCA", dropna=False)["_receita"].sum()
-                          .reset_index().rename(columns={"_receita": "Faturamento"}))
-                    mc["MARCA"] = mc["MARCA"].fillna("—").astype(str).str.strip().replace({"": "—"})
-                    totmc = float(mc["Faturamento"].sum())
-                    mc["%"] = (mc["Faturamento"] / totmc * 100.0) if totmc != 0 else 0.0
-                    mc = mc.sort_values("Faturamento", ascending=False)
-                    show_mc = mc.copy()
-                    show_mc["Faturamento"] = show_mc["Faturamento"].apply(lambda x: f"R$ {format_brl(x)}")
-                    show_mc["%"] = show_mc["%"].apply(fmt_pct)
-                    st.dataframe(show_mc, use_container_width=True, hide_index=True)
-                else:
-                    st.info("Coluna MARCA não encontrada.")
+            piv = (tmp.pivot_table(index="CLIENTE", columns="MES", values="_receita", aggfunc="sum", fill_value=0.0)
+                   .reindex(columns=meses_cols, fill_value=0.0))
 
+            piv.columns = [MESES_FULL[int(c)] for c in piv.columns]
+            piv = piv.reset_index()
 
-    st.divider()
-    section_title("Evolução de clientes (por mês)")
+            piv["_TOTAL"] = piv[meses_names].sum(axis=1)
+            piv = piv.sort_values("_TOTAL", ascending=False).drop(columns=["_TOTAL"])
 
-    if base_cur.empty or "CLIENTE" not in base_cur.columns:
-        st.info("Sem dados no período selecionado ou coluna CLIENTE não encontrada.")
-    else:
-        meses_cols = list(meses_exib) if meses_exib else list(range(1, 13))
-        meses_names = [MESES_FULL[m] for m in meses_cols]
+            topn = 30
+            top = piv.head(topn).copy()
 
-        tmp = base_cur.copy()
-        tmp["MES"] = tmp["_dt"].dt.month
+            def _format_tbl(df_show: pd.DataFrame) -> pd.DataFrame:
+                out = df_show.copy()
+                for c in meses_names:
+                    if c in out.columns:
+                        out[c] = out[c].apply(lambda x: f"R$ {format_brl(x)}")
+                return out
 
-        piv = (tmp.pivot_table(index="CLIENTE", columns="MES", values="_receita", aggfunc="sum", fill_value=0.0)
-               .reindex(columns=meses_cols, fill_value=0.0))
+            st.caption(f"Mostrando Top {topn} clientes por faturamento no período. (Zerado quando não há vendas no mês.)")
+            st.dataframe(_format_tbl(top), use_container_width=True, hide_index=True)
 
-        piv.columns = [MESES_FULL[int(c)] for c in piv.columns]
-        piv = piv.reset_index()
+            if len(piv) > topn:
+                with st.expander("Ver todos os clientes (tabela completa)", expanded=False):
+                    st.dataframe(_format_tbl(piv), use_container_width=True, hide_index=True)
 
-        piv["_TOTAL"] = piv[meses_names].sum(axis=1)
-        piv = piv.sort_values("_TOTAL", ascending=False).drop(columns=["_TOTAL"])
+    if menu_comercial == "Markup":
+        section_title("Markup — Análise Comercial")
+        st.caption("Mesma regra da DRE: faturamento ÷ CMV. O acumulado utiliza a soma do faturamento dividida pela soma do CMV.")
 
-        topn = 30
-        top = piv.head(topn).copy()
+        def _markup_group(data, coluna):
+            temp = data.copy()
+            temp[coluna] = temp[coluna].fillna("Não informado").astype(str).str.strip()
+            temp[coluna] = temp[coluna].replace({"": "Não informado", "nan": "Não informado", "None": "Não informado"})
+            tab = temp.groupby(coluna, dropna=False).agg(Faturamento=("_receita", "sum"), CMV=("_cmv", "sum")).reset_index()
+            tab["Markup"] = np.where(tab["CMV"] != 0, tab["Faturamento"] / tab["CMV"], np.nan)
+            return tab.sort_values("Faturamento", ascending=False)
 
-        def _format_tbl(df_show: pd.DataFrame) -> pd.DataFrame:
-            out = df_show.copy()
-            for c in meses_names:
-                if c in out.columns:
-                    out[c] = out[c].apply(lambda x: f"R$ {format_brl(x)}")
-            return out
+        receita_mk = float(base_cur["_receita"].sum())
+        cmv_mk = float(base_cur["_cmv"].sum())
+        markup_mk = receita_mk / cmv_mk if cmv_mk != 0 else None
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Markup geral", format_brl(markup_mk) if markup_mk is not None else "—")
+        m2.metric("Faturamento", f"R$ {format_brl(receita_mk)}")
+        m3.metric("CMV", f"R$ {format_brl(cmv_mk)}")
+        if cmv_mk == 0:
+            st.warning("CMV total zerado: não é possível calcular o markup geral.")
 
-        st.caption(f"Mostrando Top {topn} clientes por faturamento no período. (Zerado quando não há vendas no mês.)")
-        st.dataframe(_format_tbl(top), use_container_width=True, hide_index=True)
-
-        if len(piv) > topn:
-            with st.expander("Ver todos os clientes (tabela completa)", expanded=False):
-                st.dataframe(_format_tbl(piv), use_container_width=True, hide_index=True)
+        mk_tabs = st.tabs(["Por vendedor", "Por cliente"])
+        for tab_ui, coluna, chave in zip(mk_tabs, ["VENDEDOR", "CLIENTE"], ["mk_vend", "mk_cli"]):
+            with tab_ui:
+                if coluna not in base_cur.columns or base_cur.empty:
+                    st.info(f"Sem dados ou coluna {coluna} não encontrada.")
+                    continue
+                dados = _markup_group(base_cur, coluna)
+                busca = st.text_input(f"Buscar {coluna.lower()}", key=f"busca_{chave}")
+                if busca:
+                    dados = dados[dados[coluna].str.contains(busca, case=False, regex=False, na=False)]
+                st.caption(f"{len(dados)} registros encontrados. Ordenação por faturamento.")
+                mostrar = dados.copy()
+                mostrar["Faturamento"] = mostrar["Faturamento"].apply(lambda v: f"R$ {format_brl(v)}")
+                mostrar["CMV"] = mostrar["CMV"].apply(lambda v: f"R$ {format_brl(v)}")
+                mostrar["Markup"] = mostrar["Markup"].apply(lambda v: format_brl(v) if pd.notna(v) else "—")
+                st.dataframe(mostrar, use_container_width=True, hide_index=True)
+                st.download_button("Exportar CSV", data=dados.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig"), file_name=f"markup_{chave}.csv", mime="text/csv", key=f"export_{chave}")
